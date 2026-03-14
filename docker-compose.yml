@@ -13,5 +13,16 @@ services:
       AI_API_KEY: ${AI_API_KEY:-}
       UNSPLASH_ACCESS_KEY: ${UNSPLASH_ACCESS_KEY:-}
       PEXELS_API_KEY: ${PEXELS_API_KEY:-}
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q DrawingBot.dll /proc/1/cmdline"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     network_mode: bridge
+    labels:
+      - homepage.group=Bots
+      - homepage.name=Drawing Reference Bot
+      - homepage.icon=sh-immich-light.png
+      - homepage.href=https://coolify.dartungar.com/project/ycsgggs0kssowcwgskww4cg8/environment/kk4sgs8wsgk44gc80c8soggk/application/wtmcpdmdxe3axrw40n206krh
 
