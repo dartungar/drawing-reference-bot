@@ -4,7 +4,8 @@ Standalone Telegram bot for drawing references.
 
 ## Features
 - `/draw <subject>` command
-- `/random` command and `random` keyboard button for random topic suggestion
+- `/random` command and `random topic` keyboard button for random topic suggestion
+- `/randomref` command and `random reference` keyboard button for a fully random reference image
 - Subject translation to English (optional, via OpenAI Responses API)
 - Random topic suggestion when no subject is provided
 - Inline buttons:
@@ -24,6 +25,10 @@ Standalone Telegram bot for drawing references.
 - `PEXELS_API_KEY` (optional but recommended)
 
 At least one of `UNSPLASH_ACCESS_KEY` or `PEXELS_API_KEY` must be configured.
+
+## Random reference behavior
+- Unsplash uses `GET /photos/random`
+- Pexels uses `GET /v1/curated`, then picks a random curated photo from the returned page
 
 ## Run (local)
 ```bash

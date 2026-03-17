@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("DrawingBot")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8f41044a32f7d3c7be20cdeddc843b2678c511d3")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0fb77ed11a857cdd3c45f6839a159c23c8e350a1")]
 [assembly: System.Reflection.AssemblyProductAttribute("DrawingBot")]
 [assembly: System.Reflection.AssemblyTitleAttribute("DrawingBot")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

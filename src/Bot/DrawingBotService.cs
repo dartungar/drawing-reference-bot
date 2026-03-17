@@ -106,6 +106,7 @@ public sealed class DrawingBotService : BackgroundService
                     [
                         new BotCommand { Command = "draw", Description = "Get drawing reference for a subject" },
                         new BotCommand { Command = "random", Description = "Suggest random drawing topic" },
+                        new BotCommand { Command = "randomref", Description = "Get a random drawing reference" },
                         new BotCommand { Command = "help", Description = "Show usage help" }
                     ],
                     cancellationToken: stoppingToken);
@@ -175,13 +176,22 @@ public sealed class DrawingBotService : BackgroundService
         {
             await _bot.SendTextMessageAsync(
                 chatId,
-                "Use /draw <subject> to get a drawing reference.\nUse /random or tap random to get a random topic suggestion.",
+                "Use /draw <subject> to get a drawing reference.\nUse /random to get a random topic suggestion.\nUse /randomref to get a random drawing reference.",
                 replyMarkup: BuildMainKeyboard(),
                 cancellationToken: ct);
             return;
         }
 
+        if (text.StartsWith("/randomref", StringComparison.OrdinalIgnoreCase) ||
+            text.StartsWith("/random_reference", StringComparison.OrdinalIgnoreCase) ||
+            text.Equals("random reference", StringComparison.OrdinalIgnoreCase))
+        {
+            await SendRandomDrawingReferenceAsync(chatId, null, ct);
+            return;
+        }
+
         if (text.StartsWith("/random", StringComparison.OrdinalIgnoreCase) ||
+            text.Equals("random topic", StringComparison.OrdinalIgnoreCase) ||
             text.Equals("random", StringComparison.OrdinalIgnoreCase))
         {
             await SuggestRandomTopicAsync(chatId, ct);
@@ -211,7 +221,7 @@ public sealed class DrawingBotService : BackgroundService
 
         await _bot.SendTextMessageAsync(
             chatId,
-            "Unknown command. Try /draw hands or /random",
+            "Unknown command. Try /draw hands, /random, or /randomref",
             replyMarkup: BuildMainKeyboard(),
             cancellationToken: ct);
     }
@@ -266,6 +276,12 @@ public sealed class DrawingBotService : BackgroundService
 
         if (action == "different_image")
         {
+            if (_state.GetLastWasRandomReference(chatId.Value))
+            {
+                await SendRandomDrawingReferenceAsync(chatId.Value, null, ct);
+                return;
+            }
+
             var subject = _state.GetLastSubject(chatId.Value);
             if (string.IsNullOrWhiteSpace(subject))
             {
@@ -279,6 +295,15 @@ public sealed class DrawingBotService : BackgroundService
 
         if (action == "try_other_source")
         {
+            var lastSource = _state.GetLastSource(chatId.Value);
+            var forcedSource = lastSource?.Equals("pexels", StringComparison.OrdinalIgnoreCase) == true ? "unsplash" : "pexels";
+
+            if (_state.GetLastWasRandomReference(chatId.Value))
+            {
+                await SendRandomDrawingReferenceAsync(chatId.Value, forcedSource, ct);
+                return;
+            }
+
             var subject = _state.GetLastSubject(chatId.Value);
             if (string.IsNullOrWhiteSpace(subject))
             {
@@ -286,8 +311,6 @@ public sealed class DrawingBotService : BackgroundService
                 return;
             }
 
-            var lastSource = _state.GetLastSource(chatId.Value);
-            var forcedSource = lastSource?.Equals("pexels", StringComparison.OrdinalIgnoreCase) == true ? "unsplash" : "pexels";
             await SendDrawingReferenceAsync(chatId.Value, subject, forcedSource, ct);
             return;
         }
@@ -361,6 +384,7 @@ public sealed class DrawingBotService : BackgroundService
 
             _state.SetLastSubject(chatId, original);
             _state.SetLastSource(chatId, result.Value.Source.ToString().ToLowerInvariant());
+            _state.SetLastWasRandomReference(chatId, false);
 
             var sourceName = result.Value.Source == ImageSource.Unsplash ? "Unsplash" : "Pexels";
             var header = string.Equals(original, translated, StringComparison.OrdinalIgnoreCase)
@@ -377,6 +401,51 @@ public sealed class DrawingBotService : BackgroundService
         {
             _logger.LogWarning(ex, "Failed to generate drawing reference");
             await _bot.SendTextMessageAsync(chatId, $"Failed to generate drawing reference: {ex.Message}", cancellationToken: ct);
+        }
+    }
+
+    private async Task SendRandomDrawingReferenceAsync(long chatId, string? forcedSource, CancellationToken ct)
+    {
+        await _bot.SendTextMessageAsync(chatId, "Finding a random drawing reference...", cancellationToken: ct);
+
+        try
+        {
+            using var scope = _services.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<ICompositeDrawingReferenceService>();
+
+            DrawingReferenceResult? result;
+            if (string.IsNullOrWhiteSpace(forcedSource))
+            {
+                result = await service.GetRandomReferenceAsync(ct);
+            }
+            else
+            {
+                var source = forcedSource.Equals("pexels", StringComparison.OrdinalIgnoreCase)
+                    ? ImageSource.Pexels
+                    : ImageSource.Unsplash;
+                result = await service.GetRandomReferenceFromSourceAsync(source, ct);
+            }
+
+            if (result is null)
+            {
+                await _bot.SendTextMessageAsync(chatId, "I couldn't find a random drawing reference.", cancellationToken: ct);
+                return;
+            }
+
+            _state.SetLastSource(chatId, result.Value.Source.ToString().ToLowerInvariant());
+            _state.SetLastWasRandomReference(chatId, true);
+
+            var sourceName = result.Value.Source == ImageSource.Unsplash ? "Unsplash" : "Pexels";
+            var message = "Random drawing reference:\n" +
+                          $"{result.Value.ImageUrl}\n" +
+                          $"Photo by {result.Value.PhotographerName} on {sourceName}: {result.Value.PhotoPageUrl}";
+
+            await _bot.SendTextMessageAsync(chatId, message, replyMarkup: BuildResultKeyboard(result.Value.Source), cancellationToken: ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to generate random drawing reference");
+            await _bot.SendTextMessageAsync(chatId, $"Failed to generate random drawing reference: {ex.Message}", cancellationToken: ct);
         }
     }
 
@@ -416,13 +485,14 @@ public sealed class DrawingBotService : BackgroundService
         {
             new[]
             {
-                new KeyboardButton("random")
+                new KeyboardButton("random topic"),
+                new KeyboardButton("random reference")
             }
         })
         {
             ResizeKeyboard = true,
             IsPersistent = true,
-            InputFieldPlaceholder = "Type /draw <subject> or tap random"
+            InputFieldPlaceholder = "Type /draw <subject>, /random, or /randomref"
         };
     }
 }
