@@ -59,11 +59,23 @@ public sealed class ChatStateManager
         return _states.TryGetValue(chatId, out var state) ? state.LastSource : null;
     }
 
+    public void SetLastWasRandomReference(long chatId, bool value)
+    {
+        var state = _states.GetOrAdd(chatId, _ => new ChatState());
+        state.LastWasRandomReference = value;
+    }
+
+    public bool GetLastWasRandomReference(long chatId)
+    {
+        return _states.TryGetValue(chatId, out var state) && state.LastWasRandomReference;
+    }
+
     private sealed class ChatState
     {
         public string? PendingTopic { get; set; }
         public DateTimeOffset? PendingTopicAt { get; set; }
         public string? LastSubject { get; set; }
         public string? LastSource { get; set; }
+        public bool LastWasRandomReference { get; set; }
     }
 }

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 public interface IDrawingReferenceService
 {
     Task<DrawingReferenceResult?> GetReferenceAsync(string subject, CancellationToken ct = default);
+    Task<DrawingReferenceResult?> GetRandomReferenceAsync(CancellationToken ct = default);
 }
 
 public sealed class UnsplashDrawingReferenceService : IDrawingReferenceService
@@ -32,9 +33,7 @@ public sealed class UnsplashDrawingReferenceService : IDrawingReferenceService
                   "?query=" + WebUtility.UrlEncode(subject.Trim()) +
                   "&per_page=30&content_filter=high&orientation=portrait";
 
-        using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.TryAddWithoutValidation("Authorization", $"Client-ID {accessKey}");
-        req.Headers.TryAddWithoutValidation("Accept-Version", "v1");
+        using var req = CreateRequest(url, accessKey);
 
         using var resp = await _http.SendAsync(req, ct);
         var raw = await resp.Content.ReadAsStringAsync(ct);
@@ -56,11 +55,47 @@ public sealed class UnsplashDrawingReferenceService : IDrawingReferenceService
             return null;
         }
 
-        var selected = items[Random.Shared.Next(items.Length)];
-        var imageUrl = selected.GetProperty("urls").GetProperty("regular").GetString();
-        var photoPageUrl = selected.GetProperty("links").GetProperty("html").GetString();
-        var photographerName = selected.GetProperty("user").GetProperty("name").GetString();
-        var photographerProfileUrl = selected.GetProperty("user").GetProperty("links").GetProperty("html").GetString();
+        return TryParsePhoto(items[Random.Shared.Next(items.Length)]);
+    }
+
+    public async Task<DrawingReferenceResult?> GetRandomReferenceAsync(CancellationToken ct = default)
+    {
+        var accessKey = _options.AccessKey;
+        if (string.IsNullOrWhiteSpace(accessKey))
+        {
+            return null;
+        }
+
+        const string url = "https://api.unsplash.com/photos/random?content_filter=high&orientation=portrait";
+
+        using var req = CreateRequest(url, accessKey);
+
+        using var resp = await _http.SendAsync(req, ct);
+        var raw = await resp.Content.ReadAsStringAsync(ct);
+        if (!resp.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("Unsplash request failed: {Status} {Reason}", (int)resp.StatusCode, resp.ReasonPhrase);
+            return null;
+        }
+
+        using var doc = JsonDocument.Parse(raw);
+        return TryParsePhoto(doc.RootElement);
+    }
+
+    private static HttpRequestMessage CreateRequest(string url, string accessKey)
+    {
+        var req = new HttpRequestMessage(HttpMethod.Get, url);
+        req.Headers.TryAddWithoutValidation("Authorization", $"Client-ID {accessKey}");
+        req.Headers.TryAddWithoutValidation("Accept-Version", "v1");
+        return req;
+    }
+
+    private static DrawingReferenceResult? TryParsePhoto(JsonElement photo)
+    {
+        var imageUrl = photo.GetProperty("urls").GetProperty("regular").GetString();
+        var photoPageUrl = photo.GetProperty("links").GetProperty("html").GetString();
+        var photographerName = photo.GetProperty("user").GetProperty("name").GetString();
+        var photographerProfileUrl = photo.GetProperty("user").GetProperty("links").GetProperty("html").GetString();
 
         if (string.IsNullOrWhiteSpace(imageUrl) || string.IsNullOrWhiteSpace(photoPageUrl) ||
             string.IsNullOrWhiteSpace(photographerName) || string.IsNullOrWhiteSpace(photographerProfileUrl))
@@ -97,6 +132,30 @@ public sealed class PexelsDrawingReferenceService : IDrawingReferenceService
                   "?query=" + WebUtility.UrlEncode(subject.Trim()) +
                   "&per_page=30&orientation=portrait";
 
+        return await SendPhotoRequestAsync(url, apiKey, ct);
+    }
+
+    public async Task<DrawingReferenceResult?> GetRandomReferenceAsync(CancellationToken ct = default)
+    {
+        var apiKey = _options.ApiKey;
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return null;
+        }
+
+        var randomPage = Random.Shared.Next(1, 11);
+        var randomUrl = $"https://api.pexels.com/v1/curated?page={randomPage}&per_page=80";
+        var result = await SendPhotoRequestAsync(randomUrl, apiKey, ct);
+        if (result is not null || randomPage == 1)
+        {
+            return result;
+        }
+
+        return await SendPhotoRequestAsync("https://api.pexels.com/v1/curated?page=1&per_page=80", apiKey, ct);
+    }
+
+    private async Task<DrawingReferenceResult?> SendPhotoRequestAsync(string url, string apiKey, CancellationToken ct)
+    {
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         req.Headers.TryAddWithoutValidation("Authorization", apiKey);
 
@@ -120,11 +179,15 @@ public sealed class PexelsDrawingReferenceService : IDrawingReferenceService
             return null;
         }
 
-        var selected = items[Random.Shared.Next(items.Length)];
-        var imageUrl = selected.GetProperty("src").GetProperty("large").GetString();
-        var photoPageUrl = selected.GetProperty("url").GetString();
-        var photographerName = selected.GetProperty("photographer").GetString();
-        var photographerProfileUrl = selected.GetProperty("photographer_url").GetString();
+        return TryParsePhoto(items[Random.Shared.Next(items.Length)]);
+    }
+
+    private static DrawingReferenceResult? TryParsePhoto(JsonElement photo)
+    {
+        var imageUrl = photo.GetProperty("src").GetProperty("large").GetString();
+        var photoPageUrl = photo.GetProperty("url").GetString();
+        var photographerName = photo.GetProperty("photographer").GetString();
+        var photographerProfileUrl = photo.GetProperty("photographer_url").GetString();
 
         if (string.IsNullOrWhiteSpace(imageUrl) || string.IsNullOrWhiteSpace(photoPageUrl) ||
             string.IsNullOrWhiteSpace(photographerName) || string.IsNullOrWhiteSpace(photographerProfileUrl))
@@ -140,6 +203,8 @@ public interface ICompositeDrawingReferenceService
 {
     Task<DrawingReferenceResult?> GetReferenceAsync(string subject, CancellationToken ct = default);
     Task<DrawingReferenceResult?> GetReferenceFromSourceAsync(string subject, ImageSource source, CancellationToken ct = default);
+    Task<DrawingReferenceResult?> GetRandomReferenceAsync(CancellationToken ct = default);
+    Task<DrawingReferenceResult?> GetRandomReferenceFromSourceAsync(ImageSource source, CancellationToken ct = default);
 }
 
 public sealed class CompositeDrawingReferenceService : ICompositeDrawingReferenceService
@@ -159,6 +224,12 @@ public sealed class CompositeDrawingReferenceService : ICompositeDrawingReferenc
         return GetReferenceFromSourceAsync(subject, source, ct);
     }
 
+    public Task<DrawingReferenceResult?> GetRandomReferenceAsync(CancellationToken ct = default)
+    {
+        var source = Random.Shared.Next(2) == 0 ? ImageSource.Unsplash : ImageSource.Pexels;
+        return GetRandomReferenceFromSourceAsync(source, ct);
+    }
+
     public async Task<DrawingReferenceResult?> GetReferenceFromSourceAsync(string subject, ImageSource source, CancellationToken ct = default)
     {
         var first = source == ImageSource.Unsplash ? await _unsplash.GetReferenceAsync(subject, ct) : await _pexels.GetReferenceAsync(subject, ct);
@@ -170,5 +241,18 @@ public sealed class CompositeDrawingReferenceService : ICompositeDrawingReferenc
         return source == ImageSource.Unsplash
             ? await _pexels.GetReferenceAsync(subject, ct)
             : await _unsplash.GetReferenceAsync(subject, ct);
+    }
+
+    public async Task<DrawingReferenceResult?> GetRandomReferenceFromSourceAsync(ImageSource source, CancellationToken ct = default)
+    {
+        var first = source == ImageSource.Unsplash ? await _unsplash.GetRandomReferenceAsync(ct) : await _pexels.GetRandomReferenceAsync(ct);
+        if (first is not null)
+        {
+            return first;
+        }
+
+        return source == ImageSource.Unsplash
+            ? await _pexels.GetRandomReferenceAsync(ct)
+            : await _unsplash.GetRandomReferenceAsync(ct);
     }
 }
